@@ -2,13 +2,15 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	goutubedl "github.com/wader/goutubedl"
 )
 
 type VideoInfo struct {
@@ -30,31 +32,30 @@ func NewMusicPlayer() *MusicPlayer {
 func (mp *MusicPlayer) SearchAndAdd(url string) error {
 	fmt.Println("Obteniendo información del video...")
 
-	cmd := exec.Command("yt-dlp",
-		"--skip-download",
-		"--print-json",
-		url)
+	// Configurar opciones
+	goutubedl.Path = "yt-dlp" // Buscará yt-dlp en PATH o lo descargará automáticamente
 
-	output, err := cmd.Output()
+	result, err := goutubedl.New(context.Background(), url, goutubedl.Options{})
 	if err != nil {
 		return fmt.Errorf("error al obtener información del video: %v", err)
 	}
 
-	var videoInfo2 VideoInfo
-	if err := json.Unmarshal(output, &videoInfo2); err != nil {
-		return fmt.Errorf("error al parsear información del video: %v", err)
-	}
-
 	// Evitar duplicados en la playlist
 	for _, v := range mp.playlist {
-		if v.ID == videoInfo2.ID {
+		if v.ID == result.Info.ID {
 			fmt.Println("⚠️ La canción ya está en la playlist")
 			return nil
 		}
 	}
 
-	mp.playlist = append(mp.playlist, videoInfo2)
-	fmt.Printf("✓ Añadido: %s\n", videoInfo2.Title)
+	videoInfo := VideoInfo{
+		ID:    result.Info.ID,
+		Title: result.Info.Title,
+		URL:   url,
+	}
+
+	mp.playlist = append(mp.playlist, videoInfo)
+	fmt.Printf("✓ Añadido: %s\n", videoInfo.Title)
 	return nil
 }
 
@@ -81,7 +82,7 @@ func (mp *MusicPlayer) Play() error {
 		video := mp.playlist[currentIndex]
 		fmt.Printf("\n🎵 Reproduciendo (%d/%d): %s\n", currentIndex+1, len(mp.playlist), video.Title)
 
-		ffplayCmd, ytdlpCmd, err := mp.startPlayback(video)
+		ffplayCmd, err := mp.startPlayback(video)
 		if err != nil {
 			log.Printf("Error iniciando reproducción de %s: %v", video.Title, err)
 			currentIndex++
@@ -90,7 +91,7 @@ func (mp *MusicPlayer) Play() error {
 
 		fmt.Println("\nControles: [n] Siguiente canción, [s] Detener reproducción")
 
-		stop := mp.waitForPlayback(ffplayCmd, ytdlpCmd)
+		stop := mp.waitForPlayback(ffplayCmd)
 
 		if stop {
 			fmt.Println("⏹️ Reproducción detenida")
@@ -109,64 +110,60 @@ func (mp *MusicPlayer) Play() error {
 	return nil
 }
 
-func (mp *MusicPlayer) startPlayback(video VideoInfo) (*exec.Cmd, *exec.Cmd, error) {
-	ytdlpCmd := exec.Command("yt-dlp",
-		"-x",
-		"--audio-format", "best",
-		"-o", "-",
-		"--quiet",
-		video.URL)
+func (mp *MusicPlayer) startPlayback(video VideoInfo) (*exec.Cmd, error) {
+	// Obtener información del video
+	result, err := goutubedl.New(context.Background(), video.URL, goutubedl.Options{})
+	if err != nil {
+		return nil, fmt.Errorf("error al obtener video: %v", err)
+	}
 
+	// Obtener el stream de audio
+	downloadResult, err := result.Download(context.Background(), "bestaudio[ext=m4a]/bestaudio")
+	if err != nil {
+		return nil, fmt.Errorf("error al obtener stream: %v", err)
+	}
+
+	// Configurar ffplay
 	ffplayCmd := exec.Command("ffplay",
 		"-nodisp",
 		"-autoexit",
 		"-loglevel", "quiet",
 		"-i", "pipe:0")
 
-	pipe, err := ytdlpCmd.StdoutPipe()
-	if err != nil {
-		return nil, nil, fmt.Errorf("error creando pipe: %v", err)
-	}
-	ffplayCmd.Stdin = pipe
-
-	if err := ytdlpCmd.Start(); err != nil {
-		return nil, nil, fmt.Errorf("error iniciando yt-dlp: %v", err)
-	}
+	// Conectar el stream a ffplay
+	ffplayCmd.Stdin = downloadResult
 
 	if err := ffplayCmd.Start(); err != nil {
-		_ = ytdlpCmd.Process.Kill()
-		return nil, nil, fmt.Errorf("error iniciando ffplay: %v", err)
+		downloadResult.Close()
+		return nil, fmt.Errorf("error iniciando ffplay: %v", err)
 	}
 
-	return ffplayCmd, ytdlpCmd, nil
+	// Cerrar el stream cuando ffplay termine
+	go func() {
+		ffplayCmd.Wait()
+		downloadResult.Close()
+	}()
+
+	return ffplayCmd, nil
 }
 
-func (mp *MusicPlayer) kill(ffplayCmd *exec.Cmd, ytdlpCmd *exec.Cmd) {
-	// Matar ffplay con taskkill
+func (mp *MusicPlayer) kill(ffplayCmd *exec.Cmd) {
 	if ffplayCmd != nil && ffplayCmd.Process != nil {
-		exec.Command("taskkill", "/IM", "ffplay.exe", "/F").Run()
+		exec.Command("taskkill", "/T", "/F", "/PID", fmt.Sprintf("%d", ffplayCmd.Process.Pid)).Run()
 	}
-
-	// Matar yt-dlp con taskkill
-	if ytdlpCmd != nil && ytdlpCmd.Process != nil {
-		exec.Command("taskkill", "/IM", "yt-dlp.exe", "/F").Run()
-	}
-
-	// Esperar un poco para que los procesos terminen
 	time.Sleep(100 * time.Millisecond)
 }
 
-func (mp *MusicPlayer) waitForPlayback(ffplayCmd *exec.Cmd, ytdlpCmd *exec.Cmd) bool {
+func (mp *MusicPlayer) waitForPlayback(ffplayCmd *exec.Cmd) bool {
 	done := make(chan struct{})
 	userInput := make(chan string, 1)
 
 	go func() {
 		defer close(done)
 		err := ffplayCmd.Wait()
-		if err != nil && !strings.Contains(err.Error(), "exit status 1") {
+		if err != nil && !strings.Contains(err.Error(), "exit status") {
 			log.Printf("Error en reproducción: %v", err)
 		}
-		mp.kill(nil, ytdlpCmd)
 	}()
 
 	go func() {
@@ -185,11 +182,11 @@ func (mp *MusicPlayer) waitForPlayback(ffplayCmd *exec.Cmd, ytdlpCmd *exec.Cmd) 
 			switch input {
 			case "n":
 				fmt.Println("⏭️ Saltando a siguiente canción...")
-				mp.kill(ffplayCmd, ytdlpCmd)
+				mp.kill(ffplayCmd)
 				return false
 			case "s":
 				fmt.Println("⏹️ Deteniendo reproducción...")
-				mp.kill(ffplayCmd, ytdlpCmd)
+				mp.kill(ffplayCmd)
 				return true
 			default:
 				fmt.Println("Comando no reconocido. Usa: [n] Siguiente, [s] Detener")
@@ -198,19 +195,15 @@ func (mp *MusicPlayer) waitForPlayback(ffplayCmd *exec.Cmd, ytdlpCmd *exec.Cmd) 
 	}
 }
 
-func (mp *MusicPlayer) ClearPlaylist2() {
-	mp.playlist = nil // más idiomático que make([]VideoInfo,0)
+func (mp *MusicPlayer) ClearPlaylist() {
+	mp.playlist = []VideoInfo{}
 	fmt.Println("🗑️ Playlist limpiada")
 }
 
 func main() {
 	fmt.Println("🎵 YouTube Music Player en Go!")
 	fmt.Println("===============================")
-	fmt.Println("Requisitos: yt-dlp y ffmpeg deben estar instalados")
-
-	if err := checkDependencies2(); err != nil {
-		log.Fatalf("❌ Error de dependencias: %v", err)
-	}
+	fmt.Println("Nota: Se descargará yt-dlp automáticamente en primer uso")
 
 	player := NewMusicPlayer()
 	scanner := bufio.NewScanner(os.Stdin)
@@ -249,7 +242,7 @@ func main() {
 				fmt.Printf("❌ Error: %v\n", err)
 			}
 		case "4":
-			player.ClearPlaylist2()
+			player.ClearPlaylist()
 		case "5":
 			fmt.Println("👋 ¡Hasta luego!")
 			return
@@ -259,13 +252,10 @@ func main() {
 	}
 }
 
-func checkDependencies2() error {
-	if err := exec.Command("yt-dlp", "--version").Run(); err != nil {
-		return fmt.Errorf("yt-dlp no encontrado. Instala con: pip install yt-dlp")
-	}
+func checkDependencies() error {
 	if err := exec.Command("ffplay", "-version").Run(); err != nil {
 		return fmt.Errorf("ffplay no encontrado. Instala ffmpeg")
 	}
-	fmt.Println("✅ Dependencias verificadas: yt-dlp y ffplay disponibles")
+	fmt.Println("✅ Dependencias verificadas: ffplay disponible")
 	return nil
 }

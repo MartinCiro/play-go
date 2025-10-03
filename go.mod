@@ -29,6 +29,7 @@ require (
 	github.com/iyear/gowidevine v0.1.0 // indirect
 	github.com/petar/GoLLRB v0.0.0-20130427215148-53be0d36a84c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/wader/goutubedl v0.0.0-20250928070745-9342f2343a72 // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
