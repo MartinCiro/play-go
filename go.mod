@@ -10,6 +10,7 @@ require (
 	github.com/gopxl/beep v1.4.1
 	github.com/kkdai/youtube/v2 v2.10.1
 	github.com/qusicapp/qusic v0.0.0-00010101000000-000000000000
+	github.com/wader/goutubedl v0.0.0-20250928070745-9342f2343a72
 	golang.org/x/net v0.44.0
 	layeh.com/gopus v0.0.0-20210501142526-1ee02d434e32
 )
@@ -29,7 +30,6 @@ require (
 	github.com/iyear/gowidevine v0.1.0 // indirect
 	github.com/petar/GoLLRB v0.0.0-20130427215148-53be0d36a84c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/wader/goutubedl v0.0.0-20250928070745-9342f2343a72 // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect

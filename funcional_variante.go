@@ -20,7 +20,8 @@ type VideoInfo struct {
 }
 
 type MusicPlayer struct {
-	playlist []VideoInfo
+	playlist       []VideoInfo
+	currentProcess *os.Process
 }
 
 func NewMusicPlayer() *MusicPlayer {
@@ -32,15 +33,11 @@ func NewMusicPlayer() *MusicPlayer {
 func (mp *MusicPlayer) SearchAndAdd(url string) error {
 	fmt.Println("Obteniendo información del video...")
 
-	// Configurar opciones
-	goutubedl.Path = "yt-dlp" // Buscará yt-dlp en PATH o lo descargará automáticamente
-
 	result, err := goutubedl.New(context.Background(), url, goutubedl.Options{})
 	if err != nil {
 		return fmt.Errorf("error al obtener información del video: %v", err)
 	}
 
-	// Evitar duplicados en la playlist
 	for _, v := range mp.playlist {
 		if v.ID == result.Info.ID {
 			fmt.Println("⚠️ La canción ya está en la playlist")
@@ -59,143 +56,133 @@ func (mp *MusicPlayer) SearchAndAdd(url string) error {
 	return nil
 }
 
+func (mp *MusicPlayer) Play() error {
+	if len(mp.playlist) == 0 {
+		return fmt.Errorf("la playlist está vacía")
+	}
+
+	for i, video := range mp.playlist {
+		fmt.Printf("\n🎵 Reproduciendo (%d/%d): %s\n", i+1, len(mp.playlist), video.Title)
+
+		if err := mp.playAudioDirect(video); err != nil {
+			fmt.Printf("❌ Error reproduciendo %s: %v\n", video.Title, err)
+			continue
+		}
+
+		fmt.Println("✓ Canción completada")
+	}
+
+	fmt.Println("\n🎉 ¡Hemos llegado al final de la lista!")
+	return nil
+}
+
+func (mp *MusicPlayer) playAudioDirect(video VideoInfo) error {
+	// Obtener información del video
+	result, err := goutubedl.New(context.Background(), video.URL, goutubedl.Options{})
+	if err != nil {
+		return fmt.Errorf("error al obtener video: %v", err)
+	}
+
+	fmt.Println("📥 Descargando y reproduciendo audio...")
+
+	// Descargar audio
+	downloadResult, err := result.Download(context.Background(), "bestaudio/best")
+	if err != nil {
+		return fmt.Errorf("error al descargar audio: %v", err)
+	}
+
+	// Usar ffplay directamente para reproducir el stream
+	ffplayCmd := exec.Command("ffplay",
+		"-nodisp",            // No mostrar ventana
+		"-autoexit",          // Salir automáticamente al terminar
+		"-loglevel", "quiet", // Silencioso
+		"-i", "pipe:0", // Leer desde stdin
+	)
+
+	// Conectar stdin
+	ffplayCmd.Stdin = downloadResult
+	ffplayCmd.Stdout = os.Stdout
+	ffplayCmd.Stderr = os.Stderr
+
+	// Iniciar reproducción
+	if err := ffplayCmd.Start(); err != nil {
+		downloadResult.Close()
+		return fmt.Errorf("error iniciando ffplay: %v", err)
+	}
+
+	mp.currentProcess = ffplayCmd.Process
+
+	// Canal para control
+	done := make(chan error, 1)
+
+	// Esperar a que termine ffplay
+	go func() {
+		err := ffplayCmd.Wait()
+		downloadResult.Close()
+		done <- err
+	}()
+
+	fmt.Println("Controles: [n] Siguiente, [s] Detener")
+
+	// Manejar controles
+	return mp.handlePlaybackControls(done)
+}
+
+func (mp *MusicPlayer) handlePlaybackControls(done chan error) error {
+	scanner := bufio.NewScanner(os.Stdin)
+
+	for {
+		select {
+		case err := <-done:
+			// Reproducción terminó naturalmente
+			if err != nil && !strings.Contains(err.Error(), "exit status") {
+				return fmt.Errorf("error en reproducción: %v", err)
+			}
+			return nil
+		default:
+			if scanner.Scan() {
+				cmd := strings.TrimSpace(strings.ToLower(scanner.Text()))
+				switch cmd {
+				case "n":
+					fmt.Println("⏭️ Saltando a siguiente canción...")
+					mp.Stop()
+					return nil
+				case "s":
+					fmt.Println("⏹️ Deteniendo reproducción...")
+					mp.Stop()
+					return fmt.Errorf("reproducción detenida por el usuario")
+				default:
+					fmt.Println("Comando no reconocido. Usa: [n] Siguiente, [s] Detener")
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+}
+
+func (mp *MusicPlayer) Stop() {
+	if mp.currentProcess != nil {
+		// En Windows
+		exec.Command("taskkill", "/T", "/F", "/PID", fmt.Sprintf("%d", mp.currentProcess.Pid)).Run()
+		// En Linux/Mac: mp.currentProcess.Signal(os.Interrupt)
+		mp.currentProcess = nil
+	}
+}
+
 func (mp *MusicPlayer) ShowPlaylist() {
 	fmt.Println("\n🎵 Playlist Actual:")
 	if len(mp.playlist) == 0 {
 		fmt.Println("   La playlist está vacía")
 		return
 	}
-
 	for i, video := range mp.playlist {
 		fmt.Printf("   %d. %s\n", i+1, video.Title)
 	}
 	fmt.Println()
 }
 
-func (mp *MusicPlayer) Play() error {
-	if len(mp.playlist) == 0 {
-		return fmt.Errorf("la playlist está vacía")
-	}
-
-	currentIndex := 0
-	for currentIndex < len(mp.playlist) {
-		video := mp.playlist[currentIndex]
-		fmt.Printf("\n🎵 Reproduciendo (%d/%d): %s\n", currentIndex+1, len(mp.playlist), video.Title)
-
-		ffplayCmd, err := mp.startPlayback(video)
-		if err != nil {
-			log.Printf("Error iniciando reproducción de %s: %v", video.Title, err)
-			currentIndex++
-			continue
-		}
-
-		fmt.Println("\nControles: [n] Siguiente canción, [s] Detener reproducción")
-
-		stop := mp.waitForPlayback(ffplayCmd)
-
-		if stop {
-			fmt.Println("⏹️ Reproducción detenida")
-			break
-		}
-
-		currentIndex++
-
-		if currentIndex >= len(mp.playlist) {
-			fmt.Println("\n🎉 ¡Hemos llegado al final de la lista!")
-			fmt.Println("   Agrega más canciones para continuar reproduciendo")
-			break
-		}
-	}
-
-	return nil
-}
-
-func (mp *MusicPlayer) startPlayback(video VideoInfo) (*exec.Cmd, error) {
-	// Obtener información del video
-	result, err := goutubedl.New(context.Background(), video.URL, goutubedl.Options{})
-	if err != nil {
-		return nil, fmt.Errorf("error al obtener video: %v", err)
-	}
-
-	// Obtener el stream de audio
-	downloadResult, err := result.Download(context.Background(), "bestaudio[ext=m4a]/bestaudio")
-	if err != nil {
-		return nil, fmt.Errorf("error al obtener stream: %v", err)
-	}
-
-	// Configurar ffplay
-	ffplayCmd := exec.Command("ffplay",
-		"-nodisp",
-		"-autoexit",
-		"-loglevel", "quiet",
-		"-i", "pipe:0")
-
-	// Conectar el stream a ffplay
-	ffplayCmd.Stdin = downloadResult
-
-	if err := ffplayCmd.Start(); err != nil {
-		downloadResult.Close()
-		return nil, fmt.Errorf("error iniciando ffplay: %v", err)
-	}
-
-	// Cerrar el stream cuando ffplay termine
-	go func() {
-		ffplayCmd.Wait()
-		downloadResult.Close()
-	}()
-
-	return ffplayCmd, nil
-}
-
-func (mp *MusicPlayer) kill(ffplayCmd *exec.Cmd) {
-	if ffplayCmd != nil && ffplayCmd.Process != nil {
-		exec.Command("taskkill", "/T", "/F", "/PID", fmt.Sprintf("%d", ffplayCmd.Process.Pid)).Run()
-	}
-	time.Sleep(100 * time.Millisecond)
-}
-
-func (mp *MusicPlayer) waitForPlayback(ffplayCmd *exec.Cmd) bool {
-	done := make(chan struct{})
-	userInput := make(chan string, 1)
-
-	go func() {
-		defer close(done)
-		err := ffplayCmd.Wait()
-		if err != nil && !strings.Contains(err.Error(), "exit status") {
-			log.Printf("Error en reproducción: %v", err)
-		}
-	}()
-
-	go func() {
-		scanner := bufio.NewScanner(os.Stdin)
-		if scanner.Scan() {
-			input := strings.TrimSpace(strings.ToLower(scanner.Text()))
-			userInput <- input
-		}
-	}()
-
-	for {
-		select {
-		case <-done:
-			return false
-		case input := <-userInput:
-			switch input {
-			case "n":
-				fmt.Println("⏭️ Saltando a siguiente canción...")
-				mp.kill(ffplayCmd)
-				return false
-			case "s":
-				fmt.Println("⏹️ Deteniendo reproducción...")
-				mp.kill(ffplayCmd)
-				return true
-			default:
-				fmt.Println("Comando no reconocido. Usa: [n] Siguiente, [s] Detener")
-			}
-		}
-	}
-}
-
 func (mp *MusicPlayer) ClearPlaylist() {
+	mp.Stop()
 	mp.playlist = []VideoInfo{}
 	fmt.Println("🗑️ Playlist limpiada")
 }
@@ -203,7 +190,12 @@ func (mp *MusicPlayer) ClearPlaylist() {
 func main() {
 	fmt.Println("🎵 YouTube Music Player en Go!")
 	fmt.Println("===============================")
-	fmt.Println("Nota: Se descargará yt-dlp automáticamente en primer uso")
+	fmt.Println("Nota: Usando ffplay para reproducción directa")
+
+	// Verificar que ffplay está disponible
+	if err := exec.Command("ffplay", "-version").Run(); err != nil {
+		log.Fatal("❌ ffplay no encontrado. Instala ffmpeg para continuar.")
+	}
 
 	player := NewMusicPlayer()
 	scanner := bufio.NewScanner(os.Stdin)
@@ -220,42 +212,35 @@ func main() {
 		if !scanner.Scan() {
 			break
 		}
-		input := strings.TrimSpace(scanner.Text())
 
+		input := strings.TrimSpace(scanner.Text())
 		switch input {
 		case "1":
 			fmt.Print("Introduce URL de YouTube: ")
 			if scanner.Scan() {
 				url := strings.TrimSpace(scanner.Text())
-				if url == "" {
-					fmt.Println("❌ URL no puede estar vacía")
-					continue
-				}
-				if err := player.SearchAndAdd(url); err != nil {
-					fmt.Printf("❌ Error: %v\n", err)
+				if url != "" {
+					if err := player.SearchAndAdd(url); err != nil {
+						fmt.Printf("❌ Error: %v\n", err)
+					}
 				}
 			}
 		case "2":
 			player.ShowPlaylist()
 		case "3":
 			if err := player.Play(); err != nil {
-				fmt.Printf("❌ Error: %v\n", err)
+				if err.Error() != "reproducción detenida por el usuario" {
+					fmt.Printf("❌ Error: %v\n", err)
+				}
 			}
 		case "4":
 			player.ClearPlaylist()
 		case "5":
+			player.Stop()
 			fmt.Println("👋 ¡Hasta luego!")
 			return
 		default:
 			fmt.Println("❌ Opción no válida")
 		}
 	}
-}
-
-func checkDependencies() error {
-	if err := exec.Command("ffplay", "-version").Run(); err != nil {
-		return fmt.Errorf("ffplay no encontrado. Instala ffmpeg")
-	}
-	fmt.Println("✅ Dependencias verificadas: ffplay disponible")
-	return nil
 }
