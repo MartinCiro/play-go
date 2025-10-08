@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Política de Privacidad - PlayGo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #27ae60;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+        }
+        .last-updated {
+            color: #7f8c8d;
+            font-style: italic;
+            margin-bottom: 30px;
+        }
+        .highlight {
+            background-color: #e8f5e8;
+            border: 1px solid #27ae60;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .section {
+            margin-bottom: 25px;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+        .contact {
+            background-color: #e8f4fd;
+            padding: 20px;
+            border-radius: 5px;
+            margin-top: 30px;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .data-table th, .data-table td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        .data-table th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔒 Política de Privacidad - PlayGo</h1>
+        <p class="last-updated">Última actualización: 8 de Octubre, 2024</p>
+
+        <div class="highlight">
+            <strong>💡 Resumen Ejecutivo:</strong> PlayGo es una aplicación de código abierto que NO recopila, 
+            almacena ni transmite ningún dato personal. Todo el procesamiento ocurre localmente en tu dispositivo.
+        </div>
+
+        <div class="section">
+            <h2>1. Información que NO Recopilamos</h2>
+            <p>PlayGo está diseñado con privacidad como prioridad fundamental. Específicamente, NO recopilamos:</p>
+            <ul>
+                <li>❌ <strong>Datos personales</strong> (nombre, email, ubicación)</li>
+                <li>❌ <strong>Historial de búsquedas</strong> o reproducciones</li>
+                <li>❌ <strong>Direcciones IP</strong> o información del dispositivo</li>
+                <li>❌ <strong>Archivos de audio</strong> o contenido multimedia</li>
+                <li>❌ <strong>Cookies</strong> o tecnologías de seguimiento</li>
+                <li>❌ <strong>Datos de uso</strong> o analytics</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>2. Procesamiento Local</h2>
+            <p>Todas las operaciones de PlayGo ocurren exclusivamente en tu dispositivo:</p>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Función</th>
+                        <th>Dónde se Procesa</th>
+                        <th>Datos Involucrados</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Búsqueda de música</td>
+                        <td>Tu dispositivo → YouTube</td>
+                        <td>Términos de búsqueda (procesados por YouTube)</td>
+                    </tr>
+                    <tr>
+                        <td>Reproducción de audio</td>
+                        <td>100% local</td>
+                        <td>Stream temporal en memoria (no se guarda)</td>
+                    </tr>
+                    <tr>
+                        <td>Gestión de playlist</td>
+                        <td>100% local</td>
+                        <td>Metadatos de canciones en memoria RAM</td>
+                    </tr>
+                    <tr>
+                        <td>Comandos de usuario</td>
+                        <td>100% local</td>
+                        <td>Comandos de terminal procesados localmente</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>3. Datos Técnicos y Terceros</h2>
+            <p>PlayGo interactúa con servicios externos de la siguiente manera:</p>
+            <ul>
+                <li><strong>YouTube/Plataformas de Streaming:</strong> 
+                    Las búsquedas se envían directamente a estas plataformas. 
+                    Su uso está sujeto a sus respectivas políticas de privacidad.</li>
+                <li><strong>goutubedl:</strong> Librería que facilita el acceso a contenido, 
+                    opera localmente en tu dispositivo.</li>
+                <li><strong>ffmpeg/ffplay:</strong> Herramientas de procesamiento de audio 
+                    que funcionan 100% localmente.</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>4. Almacenamiento de Datos</h2>
+            <p>PlayGo no escribe datos persistentes en tu dispositivo:</p>
+            <ul>
+                <li>✅ <strong>Playlists:</strong> Solo en memoria durante la ejecución</li>
+                <li>✅ <strong>Archivos de audio:</strong> Streams temporales, no se guardan en disco</li>
+                <li>✅ <strong>Configuración:</strong> No hay archivos de configuración persistente</li>
+                <li>✅ <strong>Logs:</strong> Solo salida en consola, no se guarda en archivos</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>5. Transmisión de Datos</h2>
+            <p>La única comunicación externa que realiza PlayGo es:</p>
+            <ul>
+                <li><strong>Consultas a YouTube:</strong> Para buscar y obtener metadatos de canciones</li>
+                <li><strong>Descarga de streams:</strong> Para reproducción en tiempo real</li>
+            </ul>
+            <p><strong>Importante:</strong> No operamos servidores propios ni tenemos control sobre 
+            los datos que YouTube u otras plataformas puedan recopilar.</p>
+        </div>
+
+        <div class="section">
+            <h2>6. Código Abierto y Transparencia</h2>
+            <p>PlayGo es software de código abierto, lo que significa:</p>
+            <ul>
+                <li>🔍 <strong>Transparencia total:</strong> Puedes inspeccionar todo el código fuente</li>
+                <li>🔧 <strong>Verificación independiente:</strong> Cualquiera puede auditar el código</li>
+                <li>🚫 <strong>Sin código oculto:</strong> No hay funcionalidades secretas</li>
+                <li>📖 <strong>Documentación completa:</strong> Todo el funcionamiento está documentado</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>7. Seguridad</h2>
+            <p>Aunque PlayGo no maneja datos sensibles, implementamos:</p>
+            <ul>
+                <li>🛡️ <strong>Procesamiento local:</strong> Minimiza riesgos de exposición</li>
+                <li>🛡️ <strong>Sin almacenamiento:</strong> No hay datos que proteger</li>
+                <li>🛡️ <strong>Actualizaciones regulares:</strong> Mantenemos las dependencias seguras</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>8. Cambios en esta Política</h2>
+            <p>Notificaremos cambios significativos en esta política de privacidad:</p>
+            <ul>
+                <li>📢 Actualizando la fecha en esta página</li>
+                <li>📢 Mediante releases en GitHub</li>
+                <li>📢 En el archivo README del proyecto</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>9. Tus Derechos</h2>
+            <p>Dado que no recopilamos datos personales, tienes garantías completas:</p>
+            <ul>
+                <li>✅ <strong>Control total:</strong> Tú decides cómo usar el software</li>
+                <li>✅ <strong>Transparencia:</strong> Puedes ver exactamente qué hace el código</li>
+                <li>✅ <strong>Eliminación:</strong> Al cerrar la aplicación, todos los datos se borran</li>
+                <li>✅ <strong>Portabilidad:</strong> No hay datos que portar</li>
+            </ul>
+        </div>
+
+        <div class="contact">
+            <h2>📧 Contacto sobre Privacidad</h2>
+            <p>Si tienes preguntas sobre esta política de privacidad:</p>
+            <p><strong>Email:</strong> privacy@playgo-app.com</p>
+            <p><strong>Issues en GitHub:</strong> github.com/MartinCiro/play-go/issues</p>
+            <p><strong>Repositorio:</strong> github.com/MartinCiro/play-go</p>
+        </div>
+
+        <div class="section">
+            <p><strong>Al utilizar PlayGo, confirmas que has leído y comprendido 
+            que esta aplicación no recopila ni procesa datos personales.</strong></p>
+        </div>
+    </div>
+</body>
+</html>
