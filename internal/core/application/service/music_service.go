@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/MartinCiro/play-go/internal/core/application/ports"
 	"github.com/MartinCiro/play-go/internal/core/domain"
@@ -127,9 +128,15 @@ func (ms *MusicService) startPlayback() {
 			continue
 		}
 
+		// Play ahora es no bloqueante, necesitamos esperar de otra forma
 		if err := ms.player.Play(stream); err != nil {
 			fmt.Printf("❌ Error reproduciendo %s: %v\n", currentSong.Title, err)
 			continue
+		}
+
+		// Esperar hasta que la canción termine o sea skipeada
+		for ms.player.IsPlaying() {
+			time.Sleep(500 * time.Millisecond)
 		}
 
 		fmt.Printf("✅ Completado: %s\n", currentSong.Title)

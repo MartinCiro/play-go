@@ -24,12 +24,17 @@ func (f *FFPlayPlayer) Play(stream goutubedl.Result) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	// Obtener información del video
+	result, err := goutubedl.New(context.Background(), stream.Info.WebpageURL, goutubedl.Options{})
+	if err != nil {
+		return fmt.Errorf("error al obtener video: %v", err)
+	}
+
 	// Descargar audio
-	downloadResult, err := stream.Download(context.Background(), "bestaudio/best")
+	downloadResult, err := result.Download(context.Background(), "bestaudio/best")
 	if err != nil {
 		return fmt.Errorf("error al descargar audio: %v", err)
 	}
-	defer downloadResult.Close()
 
 	// Usar ffplay directamente para reproducir el stream
 	ffplayCmd := exec.Command("ffplay",
@@ -44,18 +49,25 @@ func (f *FFPlayPlayer) Play(stream goutubedl.Result) error {
 	ffplayCmd.Stderr = os.Stderr
 
 	if err := ffplayCmd.Start(); err != nil {
+		downloadResult.Close()
 		return fmt.Errorf("error iniciando ffplay: %v", err)
 	}
 
 	f.currentProcess = ffplayCmd.Process
 
-	err = ffplayCmd.Wait()
+	// Esperar en goroutine para no bloquear
+	go func() {
+		err := ffplayCmd.Wait()
+		downloadResult.Close()
 
-	f.currentProcess = nil
+		f.mu.Lock()
+		f.currentProcess = nil
+		f.mu.Unlock()
 
-	if err != nil && !strings.Contains(err.Error(), "exit status") {
-		return fmt.Errorf("error en reproducción: %v", err)
-	}
+		if err != nil && !strings.Contains(err.Error(), "exit status") {
+			fmt.Printf("❌ Error en reproducción: %v\n", err)
+		}
+	}()
 
 	return nil
 }
