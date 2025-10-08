@@ -1,23 +1,20 @@
 package domain
 
 import (
-	"io"
+	goutubedl "github.com/wader/goutubedl"
 )
 
-// MusicProvider define la interfaz para buscar y obtener streams de música
 type MusicProvider interface {
 	Search(query string) ([]Song, error)
-	GetStream(song Song) (io.ReadCloser, error)
+	GetStream(song Song) (goutubedl.Result, error) // Cambiado a goutubedl.Result
 }
 
-// Player define la interfaz para reproducir audio
 type Player interface {
-	Play(stream io.ReadCloser) error
+	Play(stream goutubedl.Result) error // Cambiado a goutubedl.Result
 	Stop() error
 	IsPlaying() bool
 }
 
-// PlaylistRepository define la interfaz para gestionar la playlist
 type PlaylistRepository interface {
 	Add(song Song) error
 	Remove(requester string) error

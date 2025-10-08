@@ -1,4 +1,4 @@
-module funcional_variante.go
+module github.com/MartinCiro/play-go
 
 go 1.24.0
 

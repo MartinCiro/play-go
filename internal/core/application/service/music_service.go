@@ -74,7 +74,7 @@ func (ms *MusicService) Skip() error {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 
-	if !ms.repo.IsPlaying() {
+	if !ms.player.IsPlaying() {
 		return fmt.Errorf("❌ No hay ninguna canción reproduciéndose")
 	}
 

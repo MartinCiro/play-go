@@ -3,7 +3,6 @@ package ffplay
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -21,48 +20,36 @@ func NewFFPlayPlayer() *FFPlayPlayer {
 	return &FFPlayPlayer{}
 }
 
-func (f *FFPlayPlayer) Play(stream interface{}) error {
+func (f *FFPlayPlayer) Play(stream goutubedl.Result) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	// Convertir el stream al tipo correcto (manteniendo compatibilidad con tu código)
-	var downloadResult io.ReadCloser
-	switch s := stream.(type) {
-	case goutubedl.Result:
-		result, err := s.Download(context.Background(), "bestaudio/best")
-		if err != nil {
-			return fmt.Errorf("error al descargar audio: %v", err)
-		}
-		downloadResult = result
-	case io.ReadCloser:
-		downloadResult = s
-	default:
-		return fmt.Errorf("tipo de stream no soportado: %T", stream)
+	// Descargar audio
+	downloadResult, err := stream.Download(context.Background(), "bestaudio/best")
+	if err != nil {
+		return fmt.Errorf("error al descargar audio: %v", err)
 	}
 	defer downloadResult.Close()
 
 	// Usar ffplay directamente para reproducir el stream
 	ffplayCmd := exec.Command("ffplay",
-		"-nodisp",            // No mostrar ventana
-		"-autoexit",          // Salir automáticamente al terminar
-		"-loglevel", "quiet", // Silencioso
-		"-i", "pipe:0", // Leer desde stdin
+		"-nodisp",
+		"-autoexit",
+		"-loglevel", "quiet",
+		"-i", "pipe:0",
 	)
 
-	// Conectar stdin
 	ffplayCmd.Stdin = downloadResult
 	ffplayCmd.Stdout = os.Stdout
 	ffplayCmd.Stderr = os.Stderr
 
-	// Iniciar reproducción
 	if err := ffplayCmd.Start(); err != nil {
 		return fmt.Errorf("error iniciando ffplay: %v", err)
 	}
 
 	f.currentProcess = ffplayCmd.Process
 
-	// Esperar a que termine la reproducción
-	err := ffplayCmd.Wait()
+	err = ffplayCmd.Wait()
 
 	f.currentProcess = nil
 
@@ -78,7 +65,6 @@ func (f *FFPlayPlayer) Stop() error {
 	defer f.mu.Unlock()
 
 	if f.currentProcess != nil {
-		// Detener el proceso actual
 		cmd := exec.Command("taskkill", "/T", "/F", "/PID", fmt.Sprintf("%d", f.currentProcess.Pid))
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("error deteniendo reproducción: %v", err)
