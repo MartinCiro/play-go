@@ -26,7 +26,7 @@ go get github.com/wader/goutubedl
 * `tests` para pruebas unitarias e integraciones.
 
 ```
-music-bot/
+play-go/
 ├── cmd/
 │   └── bot/
 │       └── main.go                 # Punto de entrada de la aplicación

@@ -3,9 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/MartinCiro/play-go/internal/core/application/ports"
@@ -13,6 +11,8 @@ import (
 	"github.com/MartinCiro/play-go/internal/infrastructure/adapters/persistence/memory"
 	"github.com/MartinCiro/play-go/internal/infrastructure/adapters/player/ffplay"
 	"github.com/MartinCiro/play-go/internal/infrastructure/adapters/providers/youtube"
+	"github.com/MartinCiro/play-go/pkg/ffmpeg"
+	"github.com/MartinCiro/play-go/pkg/logger"
 )
 
 func main() {
@@ -26,8 +26,8 @@ func main() {
 	fmt.Println("!exit - Salir del programa")
 
 	// Verificar que ffplay está disponible
-	if err := exec.Command("ffplay", "-version").Run(); err != nil {
-		log.Fatal("❌ ffplay no encontrado. Instala ffmpeg para continuar.")
+	if err := ffmpeg.CheckOrInstall(); err != nil {
+		logger.Fatalf("❌ No se pudo instalar ffplay: %v", err)
 	}
 
 	// Inicializar dependencias

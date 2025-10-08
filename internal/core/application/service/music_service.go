@@ -2,11 +2,13 @@ package service
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/MartinCiro/play-go/internal/core/application/ports"
 	"github.com/MartinCiro/play-go/internal/core/domain"
+	"github.com/MartinCiro/play-go/pkg/logger"
 )
 
 type MusicService struct {
@@ -24,18 +26,27 @@ func NewMusicService(deps ports.ServiceDependencies) ports.MusicService {
 	}
 }
 
+func (ms *MusicService) RevokeSong(requester string) error {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	return ms.repo.Remove(requester)
+}
+
 func (ms *MusicService) PlaySong(songName string, requester string) error {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 
-	fmt.Printf("🎵 Buscando: %s...\n", songName)
+	logger.Infof("🎵 Buscando: %s...", songName)
 
 	songs, err := ms.provider.Search(songName)
 	if err != nil {
+		logger.Errorf("❌ Error buscando canción: %v", err)
 		return fmt.Errorf("error al buscar la canción: %v", err)
 	}
 
 	if len(songs) == 0 {
+		logger.Warnf("❌ No se encontraron resultados para: %s", songName)
 		return fmt.Errorf("no se encontraron resultados para: %s", songName)
 	}
 
@@ -46,29 +57,25 @@ func (ms *MusicService) PlaySong(songName string, requester string) error {
 	existingSongs, _ := ms.repo.GetAll()
 	for _, existing := range existingSongs {
 		if existing.ID == song.ID {
+			logger.Warnf("❌ La canción ya está en la playlist: %s", song.Title)
 			return fmt.Errorf("❌ La canción ya está en la playlist")
 		}
 	}
 
 	if err := ms.repo.Add(song); err != nil {
+		logger.Errorf("❌ Error añadiendo a playlist: %v", err)
 		return err
 	}
 
-	fmt.Printf("✅ Añadido: %s (Solicitado por: %s)\n", song.Title, requester)
+	logger.Infof("✅ Añadido: %s (Solicitado por: %s)", song.Title, requester)
 
 	// Si no hay nada reproduciéndose, iniciar reproducción
 	if !ms.repo.IsPlaying() {
+		logger.Info("🚀 Iniciando reproducción en background...")
 		go ms.startPlayback()
 	}
 
 	return nil
-}
-
-func (ms *MusicService) RevokeSong(requester string) error {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
-
-	return ms.repo.Remove(requester)
 }
 
 func (ms *MusicService) Skip() error {
@@ -76,9 +83,11 @@ func (ms *MusicService) Skip() error {
 	defer ms.mu.Unlock()
 
 	if !ms.player.IsPlaying() {
+		logger.Warn("❌ No hay ninguna canción reproduciéndose")
 		return fmt.Errorf("❌ No hay ninguna canción reproduciéndose")
 	}
 
+	logger.Info("⏭️  Saltando canción actual...")
 	return ms.player.Stop()
 }
 
@@ -86,32 +95,39 @@ func (ms *MusicService) ShowQueue() {
 	songs, _ := ms.repo.GetAll()
 	currentIndex := ms.repo.GetCurrentIndex()
 
-	fmt.Println("\n🎵 Cola de Reproducción:")
+	logger.Info("\n🎵 Cola de Reproducción:")
 	if len(songs) == 0 {
-		fmt.Println("   La cola está vacía")
+		logger.Info("   La cola está vacía")
 		return
 	}
 
+	// Construir la cola como string
+	var queue strings.Builder
 	for i, song := range songs {
 		status := "  "
 		if i == currentIndex {
 			status = "▶️"
 		}
-		fmt.Printf("   %s %d. %s\n", status, i+1, song.Title)
-		fmt.Printf("      👤 %s\n", song.Requester)
+		queue.WriteString(fmt.Sprintf("   %s %d. %s\n", status, i+1, song.Title))
+		queue.WriteString(fmt.Sprintf("      👤 %s\n", song.Requester))
 	}
-	fmt.Printf("\n   Total: %d canciones en cola\n", len(songs))
+	queue.WriteString(fmt.Sprintf("\n   Total: %d canciones en cola\n", len(songs)))
+
+	logger.Info(queue.String())
 }
 
 func (ms *MusicService) startPlayback() {
 	ms.repo.SetPlaying(true)
 	defer ms.repo.SetPlaying(false)
 
+	logger.Info("🎶 Iniciando reproducción de playlist...")
+
 	for {
 		songs, _ := ms.repo.GetAll()
 		currentIndex := ms.repo.GetCurrentIndex()
 
 		if currentIndex >= len(songs)-1 {
+			logger.Info("📭 Fin de la playlist alcanzado")
 			break
 		}
 
@@ -119,18 +135,17 @@ func (ms *MusicService) startPlayback() {
 		ms.repo.SetCurrentIndex(nextIndex)
 		currentSong := songs[nextIndex]
 
-		fmt.Printf("\n🎵 Reproduciendo (%d/%d): %s\n", nextIndex+1, len(songs), currentSong.Title)
-		fmt.Printf("   👤 Solicitado por: %s\n", currentSong.Requester)
+		logger.Infof("\n🎵 Reproduciendo (%d/%d): %s", nextIndex+1, len(songs), currentSong.Title)
+		logger.Infof("   👤 Solicitado por: %s", currentSong.Requester)
 
 		stream, err := ms.provider.GetStream(currentSong)
 		if err != nil {
-			fmt.Printf("❌ Error obteniendo stream: %s: %v\n", currentSong.Title, err)
+			logger.Errorf("❌ Error obteniendo stream: %s: %v", currentSong.Title, err)
 			continue
 		}
 
-		// Play ahora es no bloqueante, necesitamos esperar de otra forma
 		if err := ms.player.Play(stream); err != nil {
-			fmt.Printf("❌ Error reproduciendo %s: %v\n", currentSong.Title, err)
+			logger.Errorf("❌ Error reproduciendo %s: %v", currentSong.Title, err)
 			continue
 		}
 
@@ -139,9 +154,9 @@ func (ms *MusicService) startPlayback() {
 			time.Sleep(500 * time.Millisecond)
 		}
 
-		fmt.Printf("✅ Completado: %s\n", currentSong.Title)
+		logger.Infof("✅ Completado: %s", currentSong.Title)
 	}
 
-	fmt.Println("\n🎉 ¡Playlist completada!")
+	logger.Info("\n🎉 ¡Playlist completada!")
 	ms.repo.SetCurrentIndex(-1)
 }
