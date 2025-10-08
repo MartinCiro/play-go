@@ -8,72 +8,182 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
+	"sync"
 
 	goutubedl "github.com/wader/goutubedl"
 )
 
 type VideoInfo struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	URL   string `json:"webpage_url"`
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	URL       string `json:"webpage_url"`
+	Requester string `json:"requester"`
 }
 
 type MusicPlayer struct {
 	playlist       []VideoInfo
 	currentProcess *os.Process
+	currentIndex   int
+	isPlaying      bool
+	mu             sync.Mutex
 }
 
 func NewMusicPlayer() *MusicPlayer {
 	return &MusicPlayer{
-		playlist: []VideoInfo{},
+		playlist:     []VideoInfo{},
+		currentIndex: -1,
+		isPlaying:    false,
 	}
 }
 
-func (mp *MusicPlayer) SearchAndAdd(url string) error {
-	fmt.Println("Obteniendo información del video...")
+// PlaySong busca y añade una canción a la cola
+func (mp *MusicPlayer) PlaySong(songName string, requester string) error {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
 
-	result, err := goutubedl.New(context.Background(), url, goutubedl.Options{})
+	fmt.Printf("🎵 Buscando: %s...\n", songName)
+
+	// Usar ytsearch para obtener el primer resultado
+	searchQuery := "ytsearch1:" + songName
+
+	result, err := goutubedl.New(context.Background(), searchQuery, goutubedl.Options{})
 	if err != nil {
-		return fmt.Errorf("error al obtener información del video: %v", err)
+		return fmt.Errorf("error al buscar la canción: %v", err)
 	}
 
+	// Procesar el resultado de búsqueda
+	var videoInfo VideoInfo
+
+	if len(result.Info.Entries) > 0 {
+		// Es una playlist de resultados de búsqueda
+		firstResult := result.Info.Entries[0]
+		videoInfo = VideoInfo{
+			ID:        firstResult.ID,
+			Title:     firstResult.Title,
+			URL:       firstResult.WebpageURL,
+			Requester: requester,
+		}
+	} else {
+		// Resultado directo
+		videoInfo = VideoInfo{
+			ID:        result.Info.ID,
+			Title:     result.Info.Title,
+			URL:       result.Info.WebpageURL,
+			Requester: requester,
+		}
+	}
+
+	// Verificar si ya está en la playlist
 	for _, v := range mp.playlist {
-		if v.ID == result.Info.ID {
-			fmt.Println("⚠️ La canción ya está en la playlist")
+		if v.ID == videoInfo.ID {
+			return fmt.Errorf("❌ La canción ya está en la playlist")
+		}
+	}
+
+	mp.playlist = append(mp.playlist, videoInfo)
+	fmt.Printf("✅ Añadido: %s (Solicitado por: %s)\n", videoInfo.Title, requester)
+
+	// Si no hay nada reproduciéndose, iniciar reproducción
+	if !mp.isPlaying {
+		go mp.startPlayback()
+	}
+
+	return nil
+}
+
+// RevokeSong remueve la última canción solicitada por un usuario
+func (mp *MusicPlayer) RevokeSong(requester string) error {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	if len(mp.playlist) == 0 {
+		return fmt.Errorf("❌ La playlist está vacía")
+	}
+
+	// Buscar la última canción del solicitante
+	for i := len(mp.playlist) - 1; i >= 0; i-- {
+		if mp.playlist[i].Requester == requester {
+			removedSong := mp.playlist[i].Title
+
+			// Si es la canción actual, saltar a la siguiente
+			if i == mp.currentIndex {
+				mp.skipCurrent()
+			}
+
+			// Remover de la playlist
+			mp.playlist = append(mp.playlist[:i], mp.playlist[i+1:]...)
+
+			// Ajustar el índice actual si es necesario
+			if i < mp.currentIndex {
+				mp.currentIndex--
+			}
+
+			fmt.Printf("✅ Canción revocada: %s (Solicitante: %s)\n", removedSong, requester)
 			return nil
 		}
 	}
 
-	videoInfo := VideoInfo{
-		ID:    result.Info.ID,
-		Title: result.Info.Title,
-		URL:   url,
+	return fmt.Errorf("❌ No se encontraron canciones solicitadas por %s", requester)
+}
+
+// Skip salta la canción actual
+func (mp *MusicPlayer) Skip() error {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	if !mp.isPlaying {
+		return fmt.Errorf("❌ No hay ninguna canción reproduciéndose")
 	}
 
-	mp.playlist = append(mp.playlist, videoInfo)
-	fmt.Printf("✓ Añadido: %s\n", videoInfo.Title)
+	return mp.skipCurrent()
+}
+
+// skipCurrent salta la canción actual (debe llamarse con el mutex bloqueado)
+func (mp *MusicPlayer) skipCurrent() error {
+	if mp.currentProcess != nil {
+		// Detener el proceso actual
+		exec.Command("taskkill", "/T", "/F", "/PID", fmt.Sprintf("%d", mp.currentProcess.Pid)).Run()
+		mp.currentProcess = nil
+	}
 	return nil
 }
 
-func (mp *MusicPlayer) Play() error {
-	if len(mp.playlist) == 0 {
-		return fmt.Errorf("la playlist está vacía")
-	}
+// startPlayback inicia la reproducción de la playlist
+func (mp *MusicPlayer) startPlayback() {
+	mp.mu.Lock()
+	mp.isPlaying = true
+	mp.mu.Unlock()
 
-	for i, video := range mp.playlist {
-		fmt.Printf("\n🎵 Reproduciendo (%d/%d): %s\n", i+1, len(mp.playlist), video.Title)
+	defer func() {
+		mp.mu.Lock()
+		mp.isPlaying = false
+		mp.currentIndex = -1
+		mp.mu.Unlock()
+	}()
 
-		if err := mp.playAudioDirect(video); err != nil {
-			fmt.Printf("❌ Error reproduciendo %s: %v\n", video.Title, err)
+	for {
+		mp.mu.Lock()
+		if mp.currentIndex >= len(mp.playlist)-1 {
+			mp.mu.Unlock()
+			break
+		}
+
+		mp.currentIndex++
+		currentSong := mp.playlist[mp.currentIndex]
+		mp.mu.Unlock()
+
+		fmt.Printf("\n🎵 Reproduciendo (%d/%d): %s\n", mp.currentIndex+1, len(mp.playlist), currentSong.Title)
+		fmt.Printf("   👤 Solicitado por: %s\n", currentSong.Requester)
+
+		if err := mp.playAudioDirect(currentSong); err != nil {
+			fmt.Printf("❌ Error reproduciendo %s: %v\n", currentSong.Title, err)
 			continue
 		}
 
-		fmt.Println("✓ Canción completada")
+		fmt.Printf("✅ Completado: %s\n", currentSong.Title)
 	}
 
-	fmt.Println("\n🎉 ¡Hemos llegado al final de la lista!")
-	return nil
+	fmt.Println("\n🎉 ¡Playlist completada!")
 }
 
 func (mp *MusicPlayer) playAudioDirect(video VideoInfo) error {
@@ -82,8 +192,6 @@ func (mp *MusicPlayer) playAudioDirect(video VideoInfo) error {
 	if err != nil {
 		return fmt.Errorf("error al obtener video: %v", err)
 	}
-
-	fmt.Println("📥 Descargando y reproduciendo audio...")
 
 	// Descargar audio
 	downloadResult, err := result.Download(context.Background(), "bestaudio/best")
@@ -110,87 +218,55 @@ func (mp *MusicPlayer) playAudioDirect(video VideoInfo) error {
 		return fmt.Errorf("error iniciando ffplay: %v", err)
 	}
 
+	mp.mu.Lock()
 	mp.currentProcess = ffplayCmd.Process
+	mp.mu.Unlock()
 
-	// Canal para control
-	done := make(chan error, 1)
+	// Esperar a que termine la reproducción
+	err = ffplayCmd.Wait()
+	downloadResult.Close()
 
-	// Esperar a que termine ffplay
-	go func() {
-		err := ffplayCmd.Wait()
-		downloadResult.Close()
-		done <- err
-	}()
+	mp.mu.Lock()
+	mp.currentProcess = nil
+	mp.mu.Unlock()
 
-	fmt.Println("Controles: [n] Siguiente, [s] Detener")
-
-	// Manejar controles
-	return mp.handlePlaybackControls(done)
-}
-
-func (mp *MusicPlayer) handlePlaybackControls(done chan error) error {
-	scanner := bufio.NewScanner(os.Stdin)
-
-	for {
-		select {
-		case err := <-done:
-			// Reproducción terminó naturalmente
-			if err != nil && !strings.Contains(err.Error(), "exit status") {
-				return fmt.Errorf("error en reproducción: %v", err)
-			}
-			return nil
-		default:
-			if scanner.Scan() {
-				cmd := strings.TrimSpace(strings.ToLower(scanner.Text()))
-				switch cmd {
-				case "n":
-					fmt.Println("⏭️ Saltando a siguiente canción...")
-					mp.Stop()
-					return nil
-				case "s":
-					fmt.Println("⏹️ Deteniendo reproducción...")
-					mp.Stop()
-					return fmt.Errorf("reproducción detenida por el usuario")
-				default:
-					fmt.Println("Comando no reconocido. Usa: [n] Siguiente, [s] Detener")
-				}
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+	if err != nil && !strings.Contains(err.Error(), "exit status") {
+		return fmt.Errorf("error en reproducción: %v", err)
 	}
+
+	return nil
 }
 
-func (mp *MusicPlayer) Stop() {
-	if mp.currentProcess != nil {
-		// En Windows
-		exec.Command("taskkill", "/T", "/F", "/PID", fmt.Sprintf("%d", mp.currentProcess.Pid)).Run()
-		// En Linux/Mac: mp.currentProcess.Signal(os.Interrupt)
-		mp.currentProcess = nil
-	}
-}
+func (mp *MusicPlayer) ShowQueue() {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
 
-func (mp *MusicPlayer) ShowPlaylist() {
-	fmt.Println("\n🎵 Playlist Actual:")
+	fmt.Println("\n🎵 Cola de Reproducción:")
 	if len(mp.playlist) == 0 {
-		fmt.Println("   La playlist está vacía")
+		fmt.Println("   La cola está vacía")
 		return
 	}
-	for i, video := range mp.playlist {
-		fmt.Printf("   %d. %s\n", i+1, video.Title)
-	}
-	fmt.Println()
-}
 
-func (mp *MusicPlayer) ClearPlaylist() {
-	mp.Stop()
-	mp.playlist = []VideoInfo{}
-	fmt.Println("🗑️ Playlist limpiada")
+	for i, video := range mp.playlist {
+		status := "  "
+		if i == mp.currentIndex {
+			status = "▶️"
+		}
+		fmt.Printf("   %s %d. %s\n", status, i+1, video.Title)
+		fmt.Printf("      👤 %s\n", video.Requester)
+	}
+	fmt.Printf("\n   Total: %d canciones en cola\n", len(mp.playlist))
 }
 
 func main() {
-	fmt.Println("🎵 YouTube Music Player en Go!")
-	fmt.Println("===============================")
-	fmt.Println("Nota: Usando ffplay para reproducción directa")
+	fmt.Println("🎵 Bot de Música Simplificado")
+	fmt.Println("==============================")
+	fmt.Println("Comandos disponibles:")
+	fmt.Println("!play [canción] - Añadir canción a la cola")
+	fmt.Println("!revoke - Revocar tu última canción")
+	fmt.Println("!skip - Saltar canción actual")
+	fmt.Println("!queue - Mostrar cola actual")
+	fmt.Println("!exit - Salir del programa")
 
 	// Verificar que ffplay está disponible
 	if err := exec.Command("ffplay", "-version").Run(); err != nil {
@@ -201,46 +277,53 @@ func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
-		fmt.Println("\nOpciones:")
-		fmt.Println("1. Añadir canción (URL de YouTube)")
-		fmt.Println("2. Ver playlist")
-		fmt.Println("3. Reproducir playlist")
-		fmt.Println("4. Limpiar playlist")
-		fmt.Println("5. Salir")
-		fmt.Print("Selecciona una opción: ")
+		fmt.Print("\n> ")
 
 		if !scanner.Scan() {
 			break
 		}
 
 		input := strings.TrimSpace(scanner.Text())
-		switch input {
-		case "1":
-			fmt.Print("Introduce URL de YouTube: ")
-			if scanner.Scan() {
-				url := strings.TrimSpace(scanner.Text())
-				if url != "" {
-					if err := player.SearchAndAdd(url); err != nil {
-						fmt.Printf("❌ Error: %v\n", err)
-					}
-				}
+		parts := strings.Fields(input)
+
+		if len(parts) == 0 {
+			continue
+		}
+
+		command := strings.ToLower(parts[0])
+
+		switch command {
+		case "!play":
+			if len(parts) < 2 {
+				fmt.Println("❌ Uso: !play [nombre de la canción]")
+				continue
 			}
-		case "2":
-			player.ShowPlaylist()
-		case "3":
-			if err := player.Play(); err != nil {
-				if err.Error() != "reproducción detenida por el usuario" {
-					fmt.Printf("❌ Error: %v\n", err)
-				}
+			songName := strings.Join(parts[1:], " ")
+			if err := player.PlaySong(songName, "Usuario"); err != nil {
+				fmt.Printf("❌ Error: %v\n", err)
 			}
-		case "4":
-			player.ClearPlaylist()
-		case "5":
-			player.Stop()
+
+		case "!revoke":
+			if err := player.RevokeSong("Usuario"); err != nil {
+				fmt.Printf("❌ Error: %v\n", err)
+			}
+
+		case "!skip":
+			if err := player.Skip(); err != nil {
+				fmt.Printf("❌ Error: %v\n", err)
+			} else {
+				fmt.Println("✅ Saltando canción actual...")
+			}
+
+		case "!queue":
+			player.ShowQueue()
+
+		case "!exit":
 			fmt.Println("👋 ¡Hasta luego!")
 			return
+
 		default:
-			fmt.Println("❌ Opción no válida")
+			fmt.Println("❌ Comando no reconocido. Comandos: !play, !revoke, !skip, !queue, !exit")
 		}
 	}
 }
