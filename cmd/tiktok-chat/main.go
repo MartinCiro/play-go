@@ -18,9 +18,20 @@ import (
 	"github.com/steampoweredtaco/gotiktoklive"
 )
 
+const expirationHours = 8
+
+// buildTime se establece durante la compilación con -ldflags
+var buildTime string
+
 var startTime time.Time
 
 func main() {
+	// Verificar expiración
+	if isExpired() {
+		showExpirationMessage()
+		os.Exit(1)
+	}
+
 	startTime = time.Now() // Guardar tiempo de inicio
 
 	if len(os.Args) < 2 {
@@ -77,6 +88,44 @@ func main() {
 	<-sigChan
 
 	logger.Info("Saliendo...")
+}
+
+func isExpired() bool {
+	bt := getBuildTime()
+	expirationTime := bt.Add(time.Hour * expirationHours)
+
+	// Mostrar información de tiempo
+	logger.Infof("🕐 Build time: %s", bt.Format("2006-01-02 15:04:05"))
+	logger.Infof("⏰ Expira: %s", expirationTime.Format("2006-01-02 15:04:05"))
+	logger.Infof("⏱️ Tiempo restante: %v", time.Until(expirationTime).Round(time.Minute))
+
+	return time.Now().After(expirationTime)
+}
+
+func getBuildTime() time.Time {
+	if buildTime != "" {
+		// Parsear el tiempo de compilación
+		if t, err := time.Parse(time.RFC3339, buildTime); err == nil {
+			return t
+		}
+	}
+
+	// Fallback: usar tiempo actual (para desarrollo sin -ldflags)
+	return time.Now().Add(-1 * time.Hour)
+}
+
+func showExpirationMessage() {
+	logger.Info("")
+	logger.Info("🚫 =================================")
+	logger.Info("🚫        VERSIÓN DE PRUEBA")
+	logger.Info("🚫 =================================")
+	logger.Infof("🚫 Esta versión ha expirado después de %d horas", expirationHours)
+	logger.Info("🚫 ")
+	logger.Info("💡 Para obtener la versión completa:")
+	logger.Info("💡 • Contacta al desarrollador")
+	logger.Info("💡 • Visita: https://github.com/MartinCiro/play-go")
+	logger.Info("💡 • Email: soporte@playgo-app.com")
+	logger.Info("")
 }
 
 // isNewMessage verifica si el mensaje es nuevo (posterior al inicio del bot)

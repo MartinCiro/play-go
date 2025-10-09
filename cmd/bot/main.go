@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/MartinCiro/play-go/internal/core/application/ports"
 	"github.com/MartinCiro/play-go/internal/core/application/service"
@@ -15,7 +16,18 @@ import (
 	"github.com/MartinCiro/play-go/pkg/logger"
 )
 
+const expirationHours = 8
+
+// buildTime se establece durante la compilación con -ldflags
+var buildTime string
+
 func main() {
+	// Verificar expiración
+	if isExpired() {
+		showExpirationMessage()
+		os.Exit(1)
+	}
+
 	fmt.Println("🎵 Bot de Música Simplificado")
 	fmt.Println("==============================")
 	fmt.Println("Comandos disponibles:")
@@ -99,4 +111,42 @@ func runCLI(service ports.MusicService) {
 			fmt.Println("❌ Comando no reconocido. Comandos: !play, !revoke, !skip, !queue, !exit")
 		}
 	}
+}
+
+func isExpired() bool {
+	bt := getBuildTime()
+	expirationTime := bt.Add(time.Hour * expirationHours)
+
+	// Mostrar información de tiempo (opcional, para debugging)
+	fmt.Printf("🕐 Build time: %s\n", bt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("⏰ Expira: %s\n", expirationTime.Format("2006-01-02 15:04:05"))
+	fmt.Printf("⏱️ Tiempo restante: %v\n", time.Until(expirationTime).Round(time.Minute))
+
+	return time.Now().After(expirationTime)
+}
+
+func getBuildTime() time.Time {
+	if buildTime != "" {
+		// Parsear el tiempo de compilación
+		if t, err := time.Parse(time.RFC3339, buildTime); err == nil {
+			return t
+		}
+	}
+
+	// Fallback: usar tiempo actual (para desarrollo sin -ldflags)
+	return time.Now().Add(-1 * time.Hour)
+}
+
+func showExpirationMessage() {
+	fmt.Println("")
+	fmt.Println("🚫 =================================")
+	fmt.Println("🚫        VERSIÓN DE PRUEBA")
+	fmt.Println("🚫 =================================")
+	fmt.Printf("🚫 Esta versión ha expirado después de %d horas\n", expirationHours)
+	fmt.Println("🚫 ")
+	fmt.Println("💡 Para obtener la versión completa:")
+	fmt.Println("💡 • Contacta al desarrollador")
+	fmt.Println("💡 • Visita: https://github.com/MartinCiro/play-go")
+	fmt.Println("💡 • Email: soporte@playgo-app.com")
+	fmt.Println("")
 }
