@@ -30,6 +30,14 @@ func (pr *PlaylistRepository) Add(song domain.Song) error {
 	return nil
 }
 
+func (pr *PlaylistRepository) ReplaceAll(newPlaylist []domain.Song) {
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+	pr.playlist = newPlaylist
+	// Resetear índice actual ya que la lista cambió
+	pr.currentIndex = -1
+}
+
 func (pr *PlaylistRepository) Remove(requester string) error {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()

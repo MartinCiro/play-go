@@ -8,6 +8,7 @@ import (
 
 	"github.com/MartinCiro/play-go/internal/core/application/ports"
 	"github.com/MartinCiro/play-go/internal/core/domain"
+	"github.com/MartinCiro/play-go/internal/infrastructure/adapters/persistence/memory"
 	"github.com/MartinCiro/play-go/pkg/logger"
 )
 
@@ -158,28 +159,31 @@ func (ms *MusicService) startPlayback() {
 
 	for {
 		songs, _ := ms.repo.GetAll()
-		currentIndex := ms.repo.GetCurrentIndex()
 
-		if currentIndex >= len(songs)-1 {
-			logger.Info("📭 Fin de la playlist alcanzado")
+		// Verificar si hay canciones disponibles
+		if len(songs) == 0 {
+			logger.Info("📭 Playlist vacía, terminando reproducción")
 			break
 		}
 
-		nextIndex := currentIndex + 1
-		ms.repo.SetCurrentIndex(nextIndex)
-		currentSong := songs[nextIndex]
+		// Siempre reproducir la primera canción de la lista
+		currentSong := songs[0]
 
-		logger.Infof("\n🎵 Reproduciendo (%d/%d): %s", nextIndex+1, len(songs), currentSong.Title)
+		logger.Infof("\n🎵 Reproduciendo (%d/%d): %s", 1, len(songs), currentSong.Title)
 		logger.Infof("   👤 Solicitado por: %s", currentSong.Requester)
 
 		stream, err := ms.provider.GetStream(currentSong)
 		if err != nil {
 			logger.Errorf("❌ Error obteniendo stream: %s: %v", currentSong.Title, err)
+			// Eliminar la canción fallida y continuar con la siguiente
+			ms.removeFirstSong()
 			continue
 		}
 
 		if err := ms.player.Play(stream); err != nil {
 			logger.Errorf("❌ Error reproduciendo %s: %v", currentSong.Title, err)
+			// Eliminar la canción fallida y continuar con la siguiente
+			ms.removeFirstSong()
 			continue
 		}
 
@@ -189,8 +193,35 @@ func (ms *MusicService) startPlayback() {
 		}
 
 		logger.Infof("✅ Completado: %s", currentSong.Title)
+
+		// ✅ ELIMINAR la canción después de reproducirla exitosamente
+		ms.removeFirstSong()
 	}
 
 	logger.Info("\n🎉 ¡Playlist completada!")
 	ms.repo.SetCurrentIndex(-1)
+}
+
+// removeFirstSong elimina la primera canción de la playlist
+func (ms *MusicService) removeFirstSong() {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	songs, _ := ms.repo.GetAll()
+	if len(songs) > 0 {
+		// Crear nueva lista sin la primera canción
+		newPlaylist := songs[1:]
+		ms.replacePlaylist(newPlaylist)
+
+		if len(newPlaylist) > 0 {
+			logger.Infof("📋 Playlist actualizada: %d canciones restantes", len(newPlaylist))
+		}
+	}
+}
+
+// replacePlaylist reemplaza toda la playlist (método interno)
+func (ms *MusicService) replacePlaylist(newPlaylist []domain.Song) {
+	if repo, ok := ms.repo.(*memory.PlaylistRepository); ok {
+		repo.ReplaceAll(newPlaylist)
+	}
 }

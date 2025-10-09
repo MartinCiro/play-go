@@ -23,4 +23,5 @@ type PlaylistRepository interface {
 	SetCurrentIndex(index int)
 	IsPlaying() bool
 	SetPlaying(playing bool)
+	ReplaceAll(songs []Song)
 }
