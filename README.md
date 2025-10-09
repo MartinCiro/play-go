@@ -1,110 +1,144 @@
-# 🎧 Bot de música para integrar con APIs
+# 🎧 Bot de Música - PlayGo
 
-## 🚀 Iniciar proyecto
+## 📖 Descripción
+
+PlayGo es un bot de música con arquitectura hexagonal que permite reproducir música desde YouTube directamente desde la terminal. Soporta integración con TikTok Live para controlar la reproducción mediante comandos del chat.
+
+## 🚀 Características
+
+- ✅ **Arquitectura hexagonal** - Código mantenible y testeable
+- ✅ **Reproducción desde YouTube** - Búsqueda y streaming en tiempo real
+- ✅ **Integración con TikTok Live** - Control por comandos del chat
+- ✅ **Instalación automática de dependencias** - FFmpeg/ffplay automático
+- ✅ **Sistema de logging profesional** - Logs estructurados con niveles
+- ✅ **Comandos intuitivos** - Play, skip, queue, revoke
+
+## 🛠️ Instalación
+
+### Prerrequisitos
+- **Go 1.21+**
+- **Git**
+
+### Configuración inicial
 
 ```bash
+# Clonar el proyecto
+git clone <tu-repositorio>
+cd play-go
+
+# Inicializar módulo Go
+go mod init github.com/MartinCiro/play-go
+
+# Descargar dependencias
 go mod tidy
 ```
 
-## 🆕 Inicializar módulo Go
+## 🎵 Modo de Uso
+
+### 1. **Bot de Música Standalone (Sin TikTok)**
+
+Ejecuta el bot básico para controlar la música manualmente:
 
 ```bash
-go mod init
+# Desde la raíz del proyecto
+go run cmd/bot/main.go
 ```
 
-## 📦 Obtener paquetes
+**Comandos disponibles:**
+- `!play [canción]` - Añadir canción a la cola
+- `!skip` - Saltar canción actual
+- `!queue` - Mostrar cola de reproducción  
+- `!revoke` - Eliminar tu última canción
+- `!exit` - Salir del programa
+
+**Ejemplo:**
+```
+> !play bad bunny
+🎵 Buscando: bad bunny...
+✅ Añadido: Bad Bunny - Song Name (Solicitado por: Usuario)
+
+> !queue
+🎵 Cola de Reproducción:
+   ▶️ 1. Bad Bunny - Song Name
+      👤 Usuario
+   Total: 1 canciones en cola
+```
+
+### 2. **Bot con Integración TikTok Live**
+
+Controla la música mediante comandos del chat de TikTok Live:
 
 ```bash
-go get github.com/wader/goutubedl
+# Conectar a un livestream de TikTok
+go run cmd/tiktok-chat/main.go @nombre_usuario_tiktok
 ```
 
-## 📂 Estructura del proyecto
+**Comandos en TikTok Chat:**
+- `!play [canción]` - Añadir canción (ej: `!play shakira`)
+- `!skip` - Saltar canción actual
+- `!queue` - Mostrar cola de reproducción
+- `!revoke` - Eliminar tu última canción
 
-* `cmd` para el punto de entrada.
-* `internal` para la lógica de negocio, infraestructura y casos de uso.
-* `pkg` para librerías reutilizables.
-* `tests` para pruebas unitarias e integraciones.
+**Ejemplo en TikTok Live:**
+```
+💬 @usuario1: !play despacito
+🎵 @usuario1 solicitó: despacito
+✅ Añadido: Luis Fonsi - Despacito (Solicitado por: @usuario1)
+
+💬 @usuario2: !skip  
+⏭️ @usuario2 solicitó saltar canción
+✅ Saltando canción (solicitado por @usuario2)
+```
+
+## 🏗️ Estructura del Proyecto
 
 ```
 play-go/
 ├── cmd/
-│   └── bot/
-│       └── main.go                 # Punto de entrada de la aplicación
+│   ├── bot/
+│   │   └── main.go                 # Bot standalone
+│   └── tiktok-chat/
+│       └── main.go                 # Integración TikTok
 ├── internal/
-│   ├── core/
-│   │   ├── domain/
-│   │   │   ├── song.go             # Entidad principal Song
-│   │   │   ├── playlist.go         # Lógica de la playlist
-│   │   │   ├── player.go           # Interfaces del reproductor
-│   │   │   └── provider.go         # Interfaces de proveedores de música
-│   │   ├── application/
-│   │   │   ├── service.go          # MusicService - orquestador principal
-│   │   │   ├── commands/           # Handlers de comandos
-│   │   │   │   ├── play.go
-│   │   │   │   ├── skip.go
-│   │   │   │   ├── revoke.go
-│   │   │   │   └── queue.go
-│   │   │   └── ports/              # Puertos (interfaces)
-│   │   │       ├── player_port.go
-│   │   │       ├── provider_port.go
-│   │   │       └── repository_port.go
-│   │   └── usecases/               # Casos de uso específicos
-│   │       ├── play_song.go
-│   │       ├── manage_playlist.go
-│   │       └── player_control.go
-│   └── infrastructure/
+│   ├── core/                       # Lógica de negocio
+│   │   ├── domain/                 # Entidades e interfaces
+│   │   ├── application/            # Casos de uso y servicios
+│   │   └── usecases/               # Lógica específica
+│   └── infrastructure/             # Adaptadores externos
 │       ├── adapters/
-│       │   ├── providers/          # Adaptadores de proveedores de música
-│       │   │   ├── youtube/
-│       │   │   │   ├── youtube_provider.go
-│       │   │   │   └── youtube_client.go
-│       │   │   ├── spotify/        # Para futura integración
-│       │   │   │   └── spotify_provider.go
-│       │   │   └── soundcloud/     # Para futura integración
-│       │   │       └── soundcloud_provider.go
-│       │   ├── player/
-│       │   │   └── ffplay/
-│       │   │       ├── ffplay_player.go
-│       │   │       └── audio_stream.go
-│       │   └── persistence/
-│       │       ├── memory/         # Implementación en memoria
-│       │       │   ├── playlist_repository.go
-│       │       │   └── state_repository.go
-│       │       └── redis/          # Para persistencia futura
-│       │           └── playlist_repository.go
-│       ├── delivery/
-│       │   ├── cli/                # Capa de presentación CLI
-│       │   │   ├── handler.go
-│       │   │   ├── parser.go
-│       │   │   └── presenter.go
-│       │   └── discord/            # Para futura integración con Discord
-│       │       ├── bot.go
-│       │       └── command_handler.go
-│       └── config/
-│           ├── config.go
-│           └── providers.go        # Configuración de proveedores
+│       │   ├── providers/          # YouTube, Spotify (futuro)
+│       │   ├── player/             # Reproductor ffplay
+│       │   └── persistence/        # Almacenamiento en memoria
+│       └── delivery/               # CLI y TikTok
 ├── pkg/
-│   ├── audio/                      # Utilidades de audio compartidas
-│   │   ├── stream.go
-│   │   └── format.go
-│   └── utils/
-│       ├── logger.go
-│       └── helpers.go
-├── tests/
-│   ├── unit/
-│   │   ├── core/
-│   │   ├── application/
-│   │   └── infrastructure/
-│   ├── integration/
-│   │   ├── providers/
-│   │   └── player/
-│   └── mocks/
-│       ├── player_mock.go
-│       ├── provider_mock.go
-│       └── repository_mock.go
-├── go.mod
-├── go.sum
-├── Makefile
-├── docker-compose.yml              # Para dependencias (Redis, etc.)
-└── README.md
+│   ├── ffmpeg/                     # Instalador automático
+│   ├── logger/                     # Sistema de logging
+│   └── utils/                      # Utilidades compartidas
+└── tests/                          # Pruebas unitarias
 ```
+
+## 🔧 Dependencias Principales
+
+- **`github.com/wader/goutubedl`** - Cliente YouTube
+- **`github.com/steampoweredtaco/gotiktoklive`** - Cliente TikTok Live
+- **FFmpeg/ffplay** - Reproducción de audio (instalación automática)
+
+## 🐛 Solución de Problemas
+
+### Error de conexión TikTok
+
+- Verifica que el usuario esté en vivo
+
+## 📝 Licencia
+
+Este proyecto es de código abierto para fines educativos. Respeta los términos de servicio de las plataformas integradas.
+
+## 🤝 Contribuciones
+
+Las contribuciones son bienvenidas. Por favor:
+
+1. Fork el proyecto
+2. Crea una rama para tu feature
+3. Commit tus cambios
+4. Push a la rama
+5. Abre un Pull Request
