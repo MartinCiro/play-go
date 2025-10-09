@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/MartinCiro/play-go/internal/core/application/ports"
 	"github.com/MartinCiro/play-go/internal/core/application/service"
@@ -17,13 +18,18 @@ import (
 	"github.com/steampoweredtaco/gotiktoklive"
 )
 
+var startTime time.Time
+
 func main() {
+	startTime = time.Now() // Guardar tiempo de inicio
+
 	if len(os.Args) < 2 {
 		logger.Fatal("Uso: go run main.go <username_tiktok>")
 	}
 
 	username := os.Args[1]
 	logger.Infof("Conectando al livestream de: @%s", username)
+	logger.Infof("⏰ Inicio del bot: %s", startTime.Format("15:04:05"))
 
 	// Inicializar el bot de música
 	musicService := initializeMusicBot()
@@ -53,34 +59,14 @@ func main() {
 	logger.Info("!queue - Mostrar cola de reproducción")
 	logger.Info("!revoke - Eliminar tu última canción")
 	logger.Info("==================================================")
-	logger.Info("Escuchando comandos del chat... (Ctrl+C para salir)")
+	logger.Info("Escuchando comandos NUEVOS del chat... (Ctrl+C para salir)")
 
 	// Recibir eventos del livestream
 	go func() {
 		for event := range live.Events {
-			// Usar reflexión para acceder a los campos
-			eventValue := reflect.ValueOf(event)
-			if eventValue.Kind() == reflect.Ptr {
-				eventValue = eventValue.Elem()
-			}
-
-			// Buscar el campo Comment
-			commentField := eventValue.FieldByName("Comment")
-			if commentField.IsValid() && commentField.Kind() == reflect.String && commentField.String() != "" {
-				comment := commentField.String()
-
-				// Buscar el campo User
-				userField := eventValue.FieldByName("User")
-				username := "Anónimo"
-				if userField.IsValid() {
-					username = extractUsername(userField)
-				}
-
-				// Mostrar comentario
-				logger.Infof("💬 @%s: %s", username, comment)
-
-				// Procesar comandos
-				processCommand(comment, username, musicService)
+			// Filtrar solo mensajes nuevos (después del inicio del bot)
+			if isNewMessage(event) {
+				processTikTokEvent(event, musicService)
 			}
 		}
 	}()
@@ -93,6 +79,71 @@ func main() {
 	logger.Info("Saliendo...")
 }
 
+// isNewMessage verifica si el mensaje es nuevo (posterior al inicio del bot)
+func isNewMessage(event interface{}) bool {
+	eventValue := reflect.ValueOf(event)
+	if eventValue.Kind() == reflect.Ptr {
+		eventValue = eventValue.Elem()
+	}
+
+	// Buscar campos de timestamp comunes
+	timestampFields := []string{"Timestamp", "Time", "CreatedAt", "MsgID"}
+
+	for _, fieldName := range timestampFields {
+		field := eventValue.FieldByName(fieldName)
+		if field.IsValid() {
+			switch field.Kind() {
+			case reflect.Int64, reflect.Int:
+				// Si es un timestamp numérico (segundos o milisegundos)
+				timestamp := field.Int()
+				eventTime := time.Unix(timestamp, 0)
+				return eventTime.After(startTime)
+			case reflect.String:
+				// Si es un string de timestamp, intentar parsear
+				// (implementar según el formato que use la librería)
+			case reflect.Struct:
+				// Si es time.Time directamente
+				if timeField, ok := field.Interface().(time.Time); ok {
+					return timeField.After(startTime)
+				}
+			}
+		}
+	}
+
+	// Si no podemos determinar el timestamp, asumir que es nuevo
+	// pero mostrar advertencia
+	logger.Warn("⚠️ No se pudo determinar timestamp del mensaje, procesando igual")
+	return true
+}
+
+// processTikTokEvent procesa un evento de TikTok
+func processTikTokEvent(event interface{}, musicService ports.MusicService) {
+	eventValue := reflect.ValueOf(event)
+	if eventValue.Kind() == reflect.Ptr {
+		eventValue = eventValue.Elem()
+	}
+
+	// Buscar el campo Comment
+	commentField := eventValue.FieldByName("Comment")
+	if commentField.IsValid() && commentField.Kind() == reflect.String && commentField.String() != "" {
+		comment := commentField.String()
+
+		// Buscar el campo User
+		userField := eventValue.FieldByName("User")
+		username := "Anónimo"
+		if userField.IsValid() {
+			username = extractUsername(userField)
+		}
+
+		// Mostrar comentario
+		logger.Infof("💬 @%s: %s", username, comment)
+
+		// Procesar comandos
+		processCommand(comment, username, musicService)
+	}
+}
+
+// Resto del código se mantiene igual...
 func initializeMusicBot() ports.MusicService {
 	// Verificar e instalar ffplay si es necesario
 	if err := ffmpeg.CheckOrInstall(); err != nil {

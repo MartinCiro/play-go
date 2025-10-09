@@ -30,7 +30,41 @@ func (ms *MusicService) RevokeSong(requester string) error {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 
-	return ms.repo.Remove(requester)
+	songs, _ := ms.repo.GetAll()
+	currentIndex := ms.repo.GetCurrentIndex()
+
+	// Buscar la última canción del solicitante
+	for i := len(songs) - 1; i >= 0; i-- {
+		if songs[i].Requester == requester {
+			logger.Infof("🗑️ Revocando canción: %s (solicitante: %s)", songs[i].Title, requester)
+
+			// Si es la canción actualmente reproduciéndose, detenerla
+			if i == currentIndex {
+				logger.Info("⏹️ Deteniendo reproducción actual (canción revocada)")
+				if err := ms.player.Stop(); err != nil {
+					logger.Errorf("❌ Error deteniendo reproducción: %v", err)
+				}
+				// Reiniciar el índice actual
+				ms.repo.SetCurrentIndex(-1)
+				ms.repo.SetPlaying(false)
+			}
+
+			// Remover de la playlist
+			if err := ms.repo.Remove(requester); err != nil {
+				return err
+			}
+
+			// Si se removió una canción y hay más en la lista, reiniciar reproducción
+			if ms.repo.IsPlaying() && currentIndex >= len(songs)-1 {
+				logger.Info("🔄 Reiniciando reproducción después de revocar canción actual")
+				go ms.startPlayback()
+			}
+
+			return nil
+		}
+	}
+
+	return fmt.Errorf("❌ No se encontraron canciones solicitadas por %s", requester)
 }
 
 func (ms *MusicService) PlaySong(songName string, requester string) error {
